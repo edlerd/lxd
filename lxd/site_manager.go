@@ -15,13 +15,16 @@ import (
 	"github.com/canonical/lxd/shared/api"
 	"github.com/canonical/lxd/shared/entity"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
 var siteManagerCmd = APIEndpoint{
 	Path: "site-manager",
 
-	Post: APIEndpointAction{Handler: siteManagerPost, AccessHandler: allowPermission(entity.TypeProject, auth.EntitlementCanCreateProfiles)},
+	Post:   APIEndpointAction{Handler: siteManagerPost, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
+	Delete: APIEndpointAction{Handler: siteManagerDelete, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
 }
 
 // swagger:operation POST /1.0/site-manager token
@@ -149,4 +152,37 @@ func NewSiteManagerClient(s *state.State) (*http.Client, string) {
 	}
 
 	return client, certInfo.Fingerprint()
+}
+
+// swagger:operation DELETE /1.0/site-manager
+//
+//	Delete site manager configuration
+//
+//	Remove this cluster from site manager
+//
+//	---
+//	produces:
+//	  - application/json
+//	responses:
+//	  "200":
+//	    $ref: "#/responses/EmptySyncResponse"
+//	  "400":
+//	    $ref: "#/responses/BadRequest"
+//	  "403":
+//	    $ref: "#/responses/Forbidden"
+//	  "500":
+//	    $ref: "#/responses/InternalServerError"
+func siteManagerDelete(d *Daemon, r *http.Request) response.Response {
+	s := d.State()
+
+	updateConfig(d, r, "", "")
+	certFilename := filepath.Join(s.OS.VarDir, "site-manager.crt")
+	keyFilename := filepath.Join(s.OS.VarDir, "site-manager.key")
+	if shared.PathExists(certFilename) {
+		os.Remove(certFilename)
+	}
+	if shared.PathExists(keyFilename) {
+		os.Remove(keyFilename)
+	}
+	return response.SyncResponse(true, nil)
 }

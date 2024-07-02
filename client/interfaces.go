@@ -457,6 +457,7 @@ type InstanceServer interface {
 
 	// Site manager functions
 	PostSiteManager(args api.SiteManagerPost) error
+	DeleteSiteManager() error
 
 	// Internal functions (for internal use)
 	RawQuery(method string, path string, data any, queryETag string) (resp *api.Response, ETag string, err error)

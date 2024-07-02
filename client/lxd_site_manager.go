@@ -17,3 +17,19 @@ func (r *ProtocolLXD) PostSiteManager(args api.SiteManagerPost) error {
 
 	return nil
 }
+
+// DeleteSiteManager sets site manager configuration.
+func (r *ProtocolLXD) DeleteSiteManager() error {
+	err := r.CheckExtension("site_manager")
+	if err != nil {
+		return err
+	}
+
+	// Send the request.
+	_, _, err = r.query("DELETE", "/site-manager", nil, "")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
