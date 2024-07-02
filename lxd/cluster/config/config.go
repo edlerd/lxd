@@ -734,6 +734,24 @@ var ConfigSchema = config.Schema{
 	//  defaultdesc: Content of `/etc/ovn/key_host` if present
 	//  shortdesc: OVN SSL client key
 	"network.ovn.client_key": {Default: ""},
+
+	// lxdmeta:generate(entities=server; group=miscellaneous; key=site-manager.addresses)
+	//
+	// ---
+	//  type: string
+	//  scope: global
+	//  defaultdesc: Site manager addresses
+	//  shortdesc: Site manager addresses
+	"site-manager.addresses": {Default: ""},
+
+	// lxdmeta:generate(entities=server; group=miscellaneous; key=site-manager.cert)
+	//
+	// ---
+	//  type: string
+	//  scope: global
+	//  defaultdesc: Site manager certificate fingerprint
+	//  shortdesc: Site manager cert
+	"site-manager.cert": {Default: ""},
 }
 
 func expiryValidator(value string) error {

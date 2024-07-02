@@ -455,6 +455,9 @@ type InstanceServer interface {
 	GetPermissions(args GetPermissionsArgs) (permissions []api.Permission, err error)
 	GetPermissionsInfo(args GetPermissionsArgs) (permissions []api.PermissionInfo, err error)
 
+	// Site manager functions
+	PostSiteManager(args api.SiteManagerPost) error
+
 	// Internal functions (for internal use)
 	RawQuery(method string, path string, data any, queryETag string) (resp *api.Response, ETag string, err error)
 	RawWebsocket(path string) (conn *websocket.Conn, err error)
