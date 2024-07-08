@@ -247,6 +247,14 @@ func (c *Config) ClusterHealingThreshold() time.Duration {
 	return healingThreshold
 }
 
+// SiteManagerServer returns all the settings needed to connect to site manager.
+func (c *Config) SiteManagerServer() (addresses []string, cert string) {
+	addresses = strings.Split(c.m.GetString("site-manager.addresses"), ",")
+	cert = c.m.GetString("site-manager.cert")
+
+	return addresses, cert
+}
+
 // Dump current configuration keys and their values. Keys with values matching
 // their defaults are omitted.
 func (c *Config) Dump() map[string]any {

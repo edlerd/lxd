@@ -2,22 +2,29 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/canonical/lxd/lxd/auth"
+	"github.com/canonical/lxd/lxd/cluster"
+	"github.com/canonical/lxd/lxd/db"
+	"github.com/canonical/lxd/lxd/instance"
 	"github.com/canonical/lxd/lxd/response"
 	"github.com/canonical/lxd/lxd/state"
+	"github.com/canonical/lxd/lxd/task"
 	"github.com/canonical/lxd/lxd/util"
 	"github.com/canonical/lxd/shared"
 	"github.com/canonical/lxd/shared/api"
 	"github.com/canonical/lxd/shared/entity"
+	"github.com/canonical/lxd/shared/logger"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var siteManagerCmd = APIEndpoint{
@@ -185,4 +192,183 @@ func siteManagerDelete(d *Daemon, r *http.Request) response.Response {
 		os.Remove(keyFilename)
 	}
 	return response.SyncResponse(true, nil)
+}
+
+type MemberStatus struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type InstanceStatus struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type SiteManagerStatusPost struct {
+	SiteCertificate   string           `json:"site_certificate"`
+	CpuTotalCount     int              `json:"cpu_total_count"`
+	CpuUsage          int              `json:"cpu_usage"`
+	MemoryTotalAmount int              `json:"memory_total_amount"`
+	MemoryUsage       int              `json:"memory_usage"`
+	DiskTotalSize     int              `json:"disk_total_size"`
+	DiskUsage         int              `json:"disk_usage"`
+	MemberStatuses    []MemberStatus   `json:"member_statuses"`
+	InstanceStatuses  []InstanceStatus `json:"instance_status"`
+}
+
+func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
+	logger.Warn("Running sendSiteManagerStatusMessage")
+
+	// Get the site manager addresses
+	addresses, cert := s.GlobalConfig.SiteManagerServer()
+
+	if len(addresses) == 0 {
+		logger.Warn("No site manager address configured")
+		return
+	}
+
+	if cert == "" {
+		logger.Warn("No site manager certificate configured")
+		return
+	}
+
+	client, siteCert := NewSiteManagerClient(s)
+
+	var memberStatusFrequencies []MemberStatus
+	var cpuTotalCount int
+	var cpuUsage int
+	var memoryTotalAmount int
+	var memoryFree int
+	var diskTotalSize int
+	var diskUsage int
+	err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+		members, err := tx.GetNodes(ctx)
+		if err != nil {
+			return err
+		}
+
+		statusFrequencies := make(map[string]int)
+		for i := range members {
+			member := members[i]
+
+			var status string
+			switch member.State {
+			case db.ClusterMemberStateCreated:
+				status = "Created"
+			case db.ClusterMemberStatePending:
+				status = "Pending"
+			case db.ClusterMemberStateEvacuated:
+				status = "Evacuated"
+			default:
+				status = "Online"
+			}
+			// in case of a single member cluster, we are on the node, and it is not offline
+			if len(members) > 1 && member.IsOffline(s.GlobalConfig.OfflineThreshold()) {
+				status = "Offline"
+			}
+
+			statusFrequencies[status]++
+			memberState, err := cluster.MemberState(ctx, s, member.Name)
+			if err != nil {
+				return err
+			}
+
+			// todo: below metrics need to be summed over all members, not just the current member
+			memoryTotalAmount += int(memberState.SysInfo.TotalRAM)
+			memoryFree += int(memberState.SysInfo.FreeRAM)
+
+			cpuTotalCount += 0                                         // todo: this should be the sum of all members
+			cpuUsage += int(memberState.SysInfo.LoadAverages[0] * 100) // todo: this is not the correct way to calculate cpu usage
+
+			for _, poolsState := range memberState.StoragePools {
+				diskTotalSize += int(poolsState.Space.Total)
+				diskUsage += int(poolsState.Space.Used)
+			}
+		}
+
+		for status, count := range statusFrequencies {
+			memberStatusFrequencies = append(memberStatusFrequencies, MemberStatus{
+				Status: status,
+				Count:  count,
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		logger.Error("Failed getting cluster member statuses", logger.Ctx{"err": err})
+		return
+	}
+
+	var instanceStatuses []InstanceStatus
+	instanceFrequencies := make(map[string]int)
+	err = s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+		return tx.InstanceList(ctx, func(dbInst db.InstanceArgs, p api.Project) error {
+			inst, err := instance.Load(s, dbInst, p)
+			if err != nil {
+				return fmt.Errorf("Failed loading instance %q (project %q) for snapshot task: %w", dbInst.Name, dbInst.Project, err)
+			}
+			instanceFrequencies[inst.State()]++
+			return nil
+		})
+	})
+	if err != nil {
+		logger.Error("Failed getting instance status frequencies", logger.Ctx{"err": err})
+		return
+	}
+
+	for status, count := range instanceFrequencies {
+		instanceStatuses = append(instanceStatuses, InstanceStatus{
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	payload := SiteManagerStatusPost{
+		SiteCertificate:   siteCert,
+		CpuTotalCount:     cpuTotalCount,
+		CpuUsage:          cpuUsage,
+		MemoryTotalAmount: memoryTotalAmount,
+		MemoryUsage:       memoryTotalAmount - memoryFree, // todo: ensure this calculation is correct
+		DiskTotalSize:     diskTotalSize,
+		DiskUsage:         diskUsage,
+		MemberStatuses:    memberStatusFrequencies,
+		InstanceStatuses:  instanceStatuses,
+	}
+
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		logger.Error("Failed to marshal status message", logger.Ctx{"err": err})
+		return
+	}
+
+	logger.Warn("Sending status message to site manager")
+
+	url := "http://" + addresses[0] + "/1.0/sites/status"
+	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		logger.Error("Failed to create request", logger.Ctx{"err": err})
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Error("Failed to send status message to site manager", logger.Ctx{"err": err})
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Error("Failed to send status message to site manager", logger.Ctx{"status": resp.Status})
+		return
+	}
+
+	logger.Warn("Done sending status message to site manager")
+}
+
+func sendSiteManagerStatusMessageTask(d *Daemon) (task.Func, task.Schedule) {
+	f := func(ctx context.Context) {
+		sendSiteManagerStatusMessage(ctx, d.State())
+	}
+
+	return f, task.Every(time.Minute)
 }
