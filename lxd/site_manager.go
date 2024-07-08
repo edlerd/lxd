@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/canonical/lxd/lxd/auth"
@@ -15,7 +18,6 @@ import (
 	"github.com/canonical/lxd/lxd/response"
 	"github.com/canonical/lxd/lxd/state"
 	"github.com/canonical/lxd/lxd/task"
-	"github.com/canonical/lxd/lxd/util"
 	"github.com/canonical/lxd/shared"
 	"github.com/canonical/lxd/shared/api"
 	"github.com/canonical/lxd/shared/entity"
@@ -91,7 +93,7 @@ func siteManagerPost(d *Daemon, r *http.Request) response.Response {
 }
 
 func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken) error {
-	client, siteCert := NewSiteManagerClient(s)
+	client, siteCert := NewSiteManagerClient(s, joinToken.Fingerprint)
 
 	payload := SiteManagerPostSite{
 		SiteName:        joinToken.ServerName,
@@ -103,7 +105,7 @@ func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken
 		return err
 	}
 
-	url := "https://" + joinToken.Addresses[0] + "/1.0/sites"
+	url := "https://" + joinToken.Addresses[0] + "/1.0/sites" // todo we should retry with the other addresses if this one fails
 	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
 		return err
@@ -142,7 +144,7 @@ type SiteManagerPostSite struct {
 }
 
 // NewSiteManagerClient returns a site manager client.
-func NewSiteManagerClient(s *state.State) (*http.Client, string) {
+func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Client, string) {
 	client := &http.Client{}
 
 	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "site-manager", shared.CertServer, false)
@@ -150,15 +152,48 @@ func NewSiteManagerClient(s *state.State) (*http.Client, string) {
 		return nil, ""
 	}
 
+	cert := certInfo.KeyPair()
+	fingerprint := certInfo.Fingerprint()
+
 	// todo: distribute the certificate among the cluster members of lxd
 
-	tlsConfig := util.ServerTLSConfig(certInfo)
+	tlsConfig := shared.InitTLSConfig()
+
+	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		// GetClientCertificate is called if not nil instead of performing the default selection of an appropriate
+		// certificate from the `Certificates` list. We only have one-key pair to send, and we always want to send it
+		// because this is what uniquely identifies the caller to the server.
+		return &cert, nil
+	}
+
+	// the server certificate is not signed by a CA, so we need to skip verification
+	// we do validate it by checking the fingerprint with VerifyPeerCertificate
+	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		// Extract the certificate
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("no server certificate provided")
+		}
+		cert := rawCerts[0]
+
+		// Calculate the fingerprint
+		h := sha256.New()
+		h.Write(cert)
+		actualFingerprint := hex.EncodeToString(h.Sum(nil))
+
+		// Compare with the expected fingerprint
+		if strings.ToLower(actualFingerprint) != strings.ToLower(serverFingerPrint) {
+			return fmt.Errorf("unexpected certificate fingerprint: %s", actualFingerprint)
+		}
+
+		return nil
+	}
 
 	client.Transport = &http.Transport{
 		TLSClientConfig: tlsConfig,
 	}
 
-	return client, certInfo.Fingerprint()
+	return client, fingerprint
 }
 
 // swagger:operation DELETE /1.0/site-manager
@@ -220,19 +255,19 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 	logger.Warn("Running sendSiteManagerStatusMessage")
 
 	// Get the site manager addresses
-	addresses, cert := s.GlobalConfig.SiteManagerServer()
+	addresses, serverCert := s.GlobalConfig.SiteManagerServer()
 
 	if len(addresses) == 0 {
 		logger.Warn("No site manager address configured")
 		return
 	}
 
-	if cert == "" {
+	if serverCert == "" {
 		logger.Warn("No site manager certificate configured")
 		return
 	}
 
-	client, siteCert := NewSiteManagerClient(s)
+	client, siteCert := NewSiteManagerClient(s, serverCert)
 
 	var memberStatusFrequencies []MemberStatus
 	var cpuTotalCount int
@@ -342,9 +377,7 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 		return
 	}
 
-	logger.Warn("Sending status message to site manager")
-
-	url := "http://" + addresses[0] + "/1.0/sites/status"
+	url := "https://" + addresses[0] + "/1.0/sites/status" // todo we should retry with the other addresses if this one fails
 	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
 		logger.Error("Failed to create request", logger.Ctx{"err": err})
