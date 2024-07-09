@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -33,8 +32,50 @@ import (
 var siteManagerCmd = APIEndpoint{
 	Path: "site-manager",
 
+	Get:    APIEndpointAction{Handler: siteManagerGet, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
 	Post:   APIEndpointAction{Handler: siteManagerPost, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
 	Delete: APIEndpointAction{Handler: siteManagerDelete, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
+}
+
+// swagger:operation GET /1.0/site-manager
+//
+//	Get site manager configuration
+//
+//	---
+//	consumes:
+//	  - application/json
+//	produces:
+//	  - application/json
+//	responses:
+//	  "200":
+//	    $ref: "#/responses/EmptySyncResponse"
+//	  "400":
+//	    $ref: "#/responses/BadRequest"
+//	  "403":
+//	    $ref: "#/responses/Forbidden"
+//	  "500":
+//	    $ref: "#/responses/InternalServerError"
+func siteManagerGet(d *Daemon, r *http.Request) response.Response {
+	s := d.State()
+
+	addresses, serverCert := s.GlobalConfig.SiteManagerServer()
+
+	if serverCert == "" {
+		return response.SyncResponse(true, api.SiteManager{})
+	}
+
+	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "site-manager", shared.CertServer, false)
+	if err != nil {
+		return response.InternalError(err)
+	}
+
+	resp := api.SiteManager{
+		SiteManagerAddresses:  addresses,
+		LocalCertFingerprint:  certInfo.Fingerprint(),
+		ServerCertFingerprint: serverCert,
+	}
+
+	return response.SyncResponse(true, resp)
 }
 
 // swagger:operation POST /1.0/site-manager token
@@ -94,11 +135,11 @@ func siteManagerPost(d *Daemon, r *http.Request) response.Response {
 }
 
 func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken) error {
-	client, siteCert := NewSiteManagerClient(s, joinToken.Fingerprint)
+	client, publicKey := NewSiteManagerClient(s, joinToken.Fingerprint)
 
 	payload := SiteManagerPostSite{
 		SiteName:        joinToken.ServerName,
-		SiteCertificate: siteCert,
+		SiteCertificate: publicKey,
 	}
 
 	reqBody, err := json.Marshal(payload)
@@ -154,7 +195,7 @@ func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Clien
 	}
 
 	cert := certInfo.KeyPair()
-	fingerprint := certInfo.Fingerprint()
+	publicKey := string(certInfo.PublicKey())
 
 	// todo: distribute the certificate among all cluster members of lxd
 
@@ -194,7 +235,7 @@ func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Clien
 		TLSClientConfig: tlsConfig,
 	}
 
-	return client, fingerprint
+	return client, publicKey
 }
 
 // swagger:operation DELETE /1.0/site-manager
@@ -247,7 +288,6 @@ type InstanceStatus struct {
 }
 
 type SiteManagerStatusPost struct {
-	SiteCertificate   string           `json:"site_certificate"`
 	CpuTotalCount     int              `json:"cpu_total_count"`
 	CpuUsage          string           `json:"cpu_usage"`
 	MemoryTotalAmount int              `json:"memory_total_amount"`
@@ -274,11 +314,9 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 		return
 	}
 
-	client, siteCert := NewSiteManagerClient(s, serverCert)
+	client, _ := NewSiteManagerClient(s, serverCert)
 
-	payload := SiteManagerStatusPost{
-		SiteCertificate: siteCert,
-	}
+	payload := SiteManagerStatusPost{}
 
 	err := enrichClusterMemberMetrics(ctx, s, &payload)
 	if err != nil {
@@ -401,14 +439,9 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 		}
 
 		result.MemoryTotalAmount += int(memberState.SysInfo.TotalRAM)
-		result.MemoryUsage += int(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM) // todo: ensure this calculation is correct
+		result.MemoryUsage += int(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM)
 
-		memberCpuCount := runtime.NumCPU() // todo this is taking the current node, we should get this for each member
-		if memberCpuCount == 0 {
-			logger.Warn("Failed getting number of CPUs")
-			memberCpuCount = 1
-		}
-		result.CpuTotalCount += memberCpuCount
+		result.CpuTotalCount += memberState.SysInfo.NumCpu
 		cpuUsageSum += memberState.SysInfo.LoadAverages[0]
 
 		for _, poolsState := range memberState.StoragePools {
@@ -424,7 +457,11 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 		})
 	}
 
-	result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum/float64(result.CpuTotalCount))
+	if result.CpuTotalCount > 0 {
+		result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum/float64(result.CpuTotalCount))
+	} else {
+		result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum)
+	}
 
 	return nil
 }

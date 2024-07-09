@@ -457,6 +457,7 @@ type InstanceServer interface {
 
 	// Site manager functions
 	PostSiteManager(args api.SiteManagerPost) error
+	GetSiteManager() (configuration *api.SiteManager, err error)
 	DeleteSiteManager() error
 
 	// Internal functions (for internal use)

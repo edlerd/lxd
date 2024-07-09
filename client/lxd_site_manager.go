@@ -18,6 +18,29 @@ func (r *ProtocolLXD) PostSiteManager(args api.SiteManagerPost) error {
 	return nil
 }
 
+// GetSiteManager displays site manager configuration.
+func (r *ProtocolLXD) GetSiteManager() (configuration *api.SiteManager, err error) {
+	err = r.CheckExtension("site_manager")
+	if err != nil {
+		return nil, err
+	}
+
+	// Send the request.
+	response, _, err := r.query("GET", "/site-manager", nil, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var result api.SiteManager
+
+	err = response.MetadataAsStruct(&result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 // DeleteSiteManager sets site manager configuration.
 func (r *ProtocolLXD) DeleteSiteManager() error {
 	err := r.CheckExtension("site_manager")
