@@ -289,7 +289,9 @@ type InstanceStatus struct {
 
 type SiteManagerStatusPost struct {
 	CpuTotalCount     int              `json:"cpu_total_count"`
-	CpuUsage          string           `json:"cpu_usage"`
+	CpuLoad1          string           `json:"cpu_load_1"`
+	CpuLoad5          string           `json:"cpu_load_5"`
+	CpuLoad15         string           `json:"cpu_load_15"`
 	MemoryTotalAmount int              `json:"memory_total_amount"`
 	MemoryUsage       int              `json:"memory_usage"`
 	DiskTotalSize     int              `json:"disk_total_size"`
@@ -406,7 +408,9 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 		})
 	}
 
-	var cpuUsageSum float64
+	var cpuLoad1 float64
+	var cpuLoad5 float64
+	var cpuLoad15 float64
 	statusFrequencies := make(map[string]int)
 	for i := range members {
 		member := members[i]
@@ -442,7 +446,9 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 		result.MemoryUsage += int(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM)
 
 		result.CpuTotalCount += memberState.SysInfo.NumCpu
-		cpuUsageSum += memberState.SysInfo.LoadAverages[0]
+		cpuLoad1 += memberState.SysInfo.LoadAverages[0]
+		cpuLoad5 += memberState.SysInfo.LoadAverages[1]
+		cpuLoad15 += memberState.SysInfo.LoadAverages[2]
 
 		for _, poolsState := range memberState.StoragePools {
 			result.DiskTotalSize += int(poolsState.Space.Total)
@@ -458,9 +464,13 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 	}
 
 	if result.CpuTotalCount > 0 {
-		result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum/float64(result.CpuTotalCount))
+		result.CpuLoad1 = fmt.Sprintf("%.2f", cpuLoad1/float64(result.CpuTotalCount))
+		result.CpuLoad5 = fmt.Sprintf("%.2f", cpuLoad5/float64(result.CpuTotalCount))
+		result.CpuLoad15 = fmt.Sprintf("%.2f", cpuLoad15/float64(result.CpuTotalCount))
 	} else {
-		result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum)
+		result.CpuLoad1 = fmt.Sprintf("%.2f", cpuLoad1)
+		result.CpuLoad5 = fmt.Sprintf("%.2f", cpuLoad5)
+		result.CpuLoad15 = fmt.Sprintf("%.2f", cpuLoad15)
 	}
 
 	return nil
