@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -72,7 +73,7 @@ func siteManagerPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if args.Token == "" {
-		return response.BadRequest(fmt.Errorf("No token provided"))
+		return response.BadRequest(fmt.Errorf("no token provided"))
 	}
 
 	joinToken, err := shared.JoinTokenDecode(args.Token)
@@ -155,7 +156,7 @@ func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Clien
 	cert := certInfo.KeyPair()
 	fingerprint := certInfo.Fingerprint()
 
-	// todo: distribute the certificate among the cluster members of lxd
+	// todo: distribute the certificate among all cluster members of lxd
 
 	tlsConfig := shared.InitTLSConfig()
 
@@ -221,10 +222,16 @@ func siteManagerDelete(d *Daemon, r *http.Request) response.Response {
 	certFilename := filepath.Join(s.OS.VarDir, "site-manager.crt")
 	keyFilename := filepath.Join(s.OS.VarDir, "site-manager.key")
 	if shared.PathExists(certFilename) {
-		os.Remove(certFilename)
+		err := os.Remove(certFilename)
+		if err != nil {
+			return nil
+		}
 	}
 	if shared.PathExists(keyFilename) {
-		os.Remove(keyFilename)
+		err := os.Remove(keyFilename)
+		if err != nil {
+			return nil
+		}
 	}
 	return response.SyncResponse(true, nil)
 }
@@ -242,7 +249,7 @@ type InstanceStatus struct {
 type SiteManagerStatusPost struct {
 	SiteCertificate   string           `json:"site_certificate"`
 	CpuTotalCount     int              `json:"cpu_total_count"`
-	CpuUsage          int              `json:"cpu_usage"`
+	CpuUsage          string           `json:"cpu_usage"`
 	MemoryTotalAmount int              `json:"memory_total_amount"`
 	MemoryUsage       int              `json:"memory_usage"`
 	DiskTotalSize     int              `json:"disk_total_size"`
@@ -252,123 +259,37 @@ type SiteManagerStatusPost struct {
 }
 
 func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
-	logger.Warn("Running sendSiteManagerStatusMessage")
+	logger.Debug("Running sendSiteManagerStatusMessage")
 
 	// Get the site manager addresses
 	addresses, serverCert := s.GlobalConfig.SiteManagerServer()
 
 	if len(addresses) == 0 {
-		logger.Warn("No site manager address configured")
+		logger.Debug("No site manager address configured")
 		return
 	}
 
 	if serverCert == "" {
-		logger.Warn("No site manager certificate configured")
+		logger.Debug("No site manager certificate configured")
 		return
 	}
 
 	client, siteCert := NewSiteManagerClient(s, serverCert)
 
-	var memberStatusFrequencies []MemberStatus
-	var cpuTotalCount int
-	var cpuUsage int
-	var memoryTotalAmount int
-	var memoryFree int
-	var diskTotalSize int
-	var diskUsage int
-	err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
-		members, err := tx.GetNodes(ctx)
-		if err != nil {
-			return err
-		}
-
-		statusFrequencies := make(map[string]int)
-		for i := range members {
-			member := members[i]
-
-			var status string
-			switch member.State {
-			case db.ClusterMemberStateCreated:
-				status = "Created"
-			case db.ClusterMemberStatePending:
-				status = "Pending"
-			case db.ClusterMemberStateEvacuated:
-				status = "Evacuated"
-			default:
-				status = "Online"
-			}
-			// in case of a single member cluster, we are on the node, and it is not offline
-			if len(members) > 1 && member.IsOffline(s.GlobalConfig.OfflineThreshold()) {
-				status = "Offline"
-			}
-
-			statusFrequencies[status]++
-			memberState, err := cluster.MemberState(ctx, s, member.Name)
-			if err != nil {
-				return err
-			}
-
-			// todo: below metrics need to be summed over all members, not just the current member
-			memoryTotalAmount += int(memberState.SysInfo.TotalRAM)
-			memoryFree += int(memberState.SysInfo.FreeRAM)
-
-			cpuTotalCount += 0                                         // todo: this should be the sum of all members
-			cpuUsage += int(memberState.SysInfo.LoadAverages[0] * 100) // todo: this is not the correct way to calculate cpu usage
-
-			for _, poolsState := range memberState.StoragePools {
-				diskTotalSize += int(poolsState.Space.Total)
-				diskUsage += int(poolsState.Space.Used)
-			}
-		}
-
-		for status, count := range statusFrequencies {
-			memberStatusFrequencies = append(memberStatusFrequencies, MemberStatus{
-				Status: status,
-				Count:  count,
-			})
-		}
-
-		return nil
-	})
-	if err != nil {
-		logger.Error("Failed getting cluster member statuses", logger.Ctx{"err": err})
-		return
-	}
-
-	var instanceStatuses []InstanceStatus
-	instanceFrequencies := make(map[string]int)
-	err = s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
-		return tx.InstanceList(ctx, func(dbInst db.InstanceArgs, p api.Project) error {
-			inst, err := instance.Load(s, dbInst, p)
-			if err != nil {
-				return fmt.Errorf("Failed loading instance %q (project %q) for snapshot task: %w", dbInst.Name, dbInst.Project, err)
-			}
-			instanceFrequencies[inst.State()]++
-			return nil
-		})
-	})
-	if err != nil {
-		logger.Error("Failed getting instance status frequencies", logger.Ctx{"err": err})
-		return
-	}
-
-	for status, count := range instanceFrequencies {
-		instanceStatuses = append(instanceStatuses, InstanceStatus{
-			Status: status,
-			Count:  count,
-		})
-	}
-
 	payload := SiteManagerStatusPost{
-		SiteCertificate:   siteCert,
-		CpuTotalCount:     cpuTotalCount,
-		CpuUsage:          cpuUsage,
-		MemoryTotalAmount: memoryTotalAmount,
-		MemoryUsage:       memoryTotalAmount - memoryFree, // todo: ensure this calculation is correct
-		DiskTotalSize:     diskTotalSize,
-		DiskUsage:         diskUsage,
-		MemberStatuses:    memberStatusFrequencies,
-		InstanceStatuses:  instanceStatuses,
+		SiteCertificate: siteCert,
+	}
+
+	err := enrichClusterMemberMetrics(ctx, s, &payload)
+	if err != nil {
+		logger.Error("Failed to enrich cluster member metrics", logger.Ctx{"err": err})
+		return
+	}
+
+	err = enrichInstanceMetrics(ctx, s, &payload)
+	if err != nil {
+		logger.Error("Failed to enrich instance metrics", logger.Ctx{"err": err})
+		return
 	}
 
 	reqBody, err := json.Marshal(payload)
@@ -376,6 +297,8 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 		logger.Error("Failed to marshal status message", logger.Ctx{"err": err})
 		return
 	}
+
+	logger.Debug("Sending status message to site manager", logger.Ctx{"reqBody": string(reqBody)})
 
 	url := "https://" + addresses[0] + "/1.0/sites/status" // todo we should retry with the other addresses if this one fails
 	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
@@ -391,11 +314,119 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("Failed to send status message to site manager", logger.Ctx{"status": resp.Status})
+		logger.Error("Invalid status code received from site manager", logger.Ctx{"status": resp.Status})
 		return
 	}
 
-	logger.Warn("Done sending status message to site manager")
+	logger.Debug("Done sending status message to site manager")
+}
+
+func enrichInstanceMetrics(ctx context.Context, s *state.State, result *SiteManagerStatusPost) error {
+	instanceFrequencies := make(map[string]int)
+	err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+		return tx.InstanceList(ctx, func(dbInst db.InstanceArgs, p api.Project) error {
+			inst, err := instance.Load(s, dbInst, p)
+			if err != nil {
+				return fmt.Errorf("failed loading instances for site manager status update task: %w", err)
+			}
+			instanceFrequencies[inst.State()]++
+			return nil
+		})
+	})
+	if err != nil {
+		return err
+	}
+
+	for status, count := range instanceFrequencies {
+		result.InstanceStatuses = append(result.InstanceStatuses, InstanceStatus{
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	return err
+}
+
+func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *SiteManagerStatusPost) error {
+	var members []db.NodeInfo
+	var err error
+
+	if s.ServerClustered {
+		err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+			members, err = tx.GetNodes(ctx)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		members = append(members, db.NodeInfo{
+			Name: "single node",
+		})
+	}
+
+	var cpuUsageSum float64
+	statusFrequencies := make(map[string]int)
+	for i := range members {
+		member := members[i]
+
+		var status string
+		switch member.State {
+		case db.ClusterMemberStateCreated:
+			status = "Created"
+		case db.ClusterMemberStatePending:
+			status = "Pending"
+		case db.ClusterMemberStateEvacuated:
+			status = "Evacuated"
+		default:
+			status = "Online"
+		}
+
+		if member.IsOffline(s.GlobalConfig.OfflineThreshold()) {
+			status = "Offline"
+		}
+
+		// in case of a single non-clustered node, we consider it online
+		if !s.ServerClustered {
+			status = "Online"
+		}
+
+		statusFrequencies[status]++
+		memberState, err := cluster.MemberState(ctx, s, member.Name)
+		if err != nil {
+			return err
+		}
+
+		result.MemoryTotalAmount += int(memberState.SysInfo.TotalRAM)
+		result.MemoryUsage += int(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM) // todo: ensure this calculation is correct
+
+		memberCpuCount := runtime.NumCPU() // todo this is taking the current node, we should get this for each member
+		if memberCpuCount == 0 {
+			logger.Warn("Failed getting number of CPUs")
+			memberCpuCount = 1
+		}
+		result.CpuTotalCount += memberCpuCount
+		cpuUsageSum += memberState.SysInfo.LoadAverages[0]
+
+		for _, poolsState := range memberState.StoragePools {
+			result.DiskTotalSize += int(poolsState.Space.Total)
+			result.DiskUsage += int(poolsState.Space.Used)
+		}
+	}
+
+	for status, count := range statusFrequencies {
+		result.MemberStatuses = append(result.MemberStatuses, MemberStatus{
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	result.CpuUsage = fmt.Sprintf("%.2f", cpuUsageSum/float64(result.CpuTotalCount))
+
+	return nil
 }
 
 func sendSiteManagerStatusMessageTask(d *Daemon) (task.Func, task.Schedule) {
