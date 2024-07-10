@@ -277,27 +277,22 @@ func siteManagerDelete(d *Daemon, r *http.Request) response.Response {
 	return response.SyncResponse(true, nil)
 }
 
-type MemberStatus struct {
+type StatusDistribution struct {
 	Status string `json:"status"`
-	Count  int    `json:"count"`
-}
-
-type InstanceStatus struct {
-	Status string `json:"status"`
-	Count  int    `json:"count"`
+	Count  int64  `json:"count"`
 }
 
 type SiteManagerStatusPost struct {
-	CpuTotalCount     int              `json:"cpu_total_count"`
-	CpuLoad1          string           `json:"cpu_load_1"`
-	CpuLoad5          string           `json:"cpu_load_5"`
-	CpuLoad15         string           `json:"cpu_load_15"`
-	MemoryTotalAmount int              `json:"memory_total_amount"`
-	MemoryUsage       int              `json:"memory_usage"`
-	DiskTotalSize     int              `json:"disk_total_size"`
-	DiskUsage         int              `json:"disk_usage"`
-	MemberStatuses    []MemberStatus   `json:"member_statuses"`
-	InstanceStatuses  []InstanceStatus `json:"instance_status"`
+	CPUTotalCount     int64                `json:"cpu_total_count"`
+	CPULoad1          string               `json:"cpu_load_1"`
+	CPULoad5          string               `json:"cpu_load_5"`
+	CPULoad15         string               `json:"cpu_load_15"`
+	MemoryTotalAmount int64                `json:"memory_total_amount"`
+	MemoryUsage       int64                `json:"memory_usage"`
+	DiskTotalSize     int64                `json:"disk_total_size"`
+	DiskUsage         int64                `json:"disk_usage"`
+	MemberStatuses    []StatusDistribution `json:"member_statuses"`
+	InstanceStatuses  []StatusDistribution `json:"instance_status"`
 }
 
 func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
@@ -362,7 +357,7 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 }
 
 func enrichInstanceMetrics(ctx context.Context, s *state.State, result *SiteManagerStatusPost) error {
-	instanceFrequencies := make(map[string]int)
+	instanceFrequencies := make(map[string]int64)
 	err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
 		return tx.InstanceList(ctx, func(dbInst db.InstanceArgs, p api.Project) error {
 			inst, err := instance.Load(s, dbInst, p)
@@ -378,7 +373,7 @@ func enrichInstanceMetrics(ctx context.Context, s *state.State, result *SiteMana
 	}
 
 	for status, count := range instanceFrequencies {
-		result.InstanceStatuses = append(result.InstanceStatuses, InstanceStatus{
+		result.InstanceStatuses = append(result.InstanceStatuses, StatusDistribution{
 			Status: status,
 			Count:  count,
 		})
@@ -411,7 +406,7 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 	var cpuLoad1 float64
 	var cpuLoad5 float64
 	var cpuLoad15 float64
-	statusFrequencies := make(map[string]int)
+	statusFrequencies := make(map[string]int64)
 	for i := range members {
 		member := members[i]
 
@@ -442,35 +437,35 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 			return err
 		}
 
-		result.MemoryTotalAmount += int(memberState.SysInfo.TotalRAM)
-		result.MemoryUsage += int(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM)
+		result.MemoryTotalAmount += int64(memberState.SysInfo.TotalRAM)
+		result.MemoryUsage += int64(memberState.SysInfo.TotalRAM - memberState.SysInfo.FreeRAM)
 
-		result.CpuTotalCount += memberState.SysInfo.NumCpu
+		result.CPUTotalCount += int64(memberState.SysInfo.NumCpu)
 		cpuLoad1 += memberState.SysInfo.LoadAverages[0]
 		cpuLoad5 += memberState.SysInfo.LoadAverages[1]
 		cpuLoad15 += memberState.SysInfo.LoadAverages[2]
 
 		for _, poolsState := range memberState.StoragePools {
-			result.DiskTotalSize += int(poolsState.Space.Total)
-			result.DiskUsage += int(poolsState.Space.Used)
+			result.DiskTotalSize += int64(poolsState.Space.Total)
+			result.DiskUsage += int64(poolsState.Space.Used)
 		}
 	}
 
 	for status, count := range statusFrequencies {
-		result.MemberStatuses = append(result.MemberStatuses, MemberStatus{
+		result.MemberStatuses = append(result.MemberStatuses, StatusDistribution{
 			Status: status,
 			Count:  count,
 		})
 	}
 
-	if result.CpuTotalCount > 0 {
-		result.CpuLoad1 = fmt.Sprintf("%.2f", cpuLoad1/float64(result.CpuTotalCount))
-		result.CpuLoad5 = fmt.Sprintf("%.2f", cpuLoad5/float64(result.CpuTotalCount))
-		result.CpuLoad15 = fmt.Sprintf("%.2f", cpuLoad15/float64(result.CpuTotalCount))
+	if result.CPUTotalCount > 0 {
+		result.CPULoad1 = fmt.Sprintf("%.2f", cpuLoad1/float64(result.CPUTotalCount))
+		result.CPULoad5 = fmt.Sprintf("%.2f", cpuLoad5/float64(result.CPUTotalCount))
+		result.CPULoad15 = fmt.Sprintf("%.2f", cpuLoad15/float64(result.CPUTotalCount))
 	} else {
-		result.CpuLoad1 = fmt.Sprintf("%.2f", cpuLoad1)
-		result.CpuLoad5 = fmt.Sprintf("%.2f", cpuLoad5)
-		result.CpuLoad15 = fmt.Sprintf("%.2f", cpuLoad15)
+		result.CPULoad1 = fmt.Sprintf("%.2f", cpuLoad1)
+		result.CPULoad5 = fmt.Sprintf("%.2f", cpuLoad5)
+		result.CPULoad15 = fmt.Sprintf("%.2f", cpuLoad15)
 	}
 
 	return nil

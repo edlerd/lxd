@@ -150,9 +150,9 @@ func (c *cmdSiteManagerShow) run(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf(i18n.G("Site manager configuration:") + "\n" +
-		i18n.G("  addresses:") + ": " + strings.Join(result.SiteManagerAddresses, ", ") + "\n" +
-		i18n.G("  local:") + ": " + result.LocalCertFingerprint + "\n" +
-		i18n.G("  server:") + ": " + result.ServerCertFingerprint + "\n")
+		i18n.G("  addresses") + ": " + strings.Join(result.SiteManagerAddresses, ", ") + "\n" +
+		i18n.G("  local") + ": " + result.LocalCertFingerprint + "\n" +
+		i18n.G("  server") + ": " + result.ServerCertFingerprint + "\n")
 
 	return nil
 }
