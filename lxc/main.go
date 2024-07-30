@@ -231,9 +231,9 @@ For help with any of those, simply call them with --help.`))
 	restoreCmd := cmdRestore{global: &globalCmd}
 	app.AddCommand(restoreCmd.command())
 
-	// site-manager sub-command
-	siteManagerCmd := cmdSiteManger{global: &globalCmd}
-	app.AddCommand(siteManagerCmd.command())
+	// cluster-manager sub-command
+	clusterManagerCmd := cmdClusterManger{global: &globalCmd}
+	app.AddCommand(clusterManagerCmd.command())
 
 	// snapshot sub-command
 	snapshotCmd := cmdSnapshot{global: &globalCmd}

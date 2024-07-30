@@ -2425,9 +2425,9 @@ The OVN driver will allocate IP addresses from the subnets specified in the upli
 Adds the ability to explicitly specify a trust token when creating a certificate
 and joining an existing cluster.
 
-## `site_manager`
+## `cluster_manager`
 
-Adds `POST`, `DELETE` and `GET` API endpoint on `/1.0/site-manager` resource to configure the connection to LXD site manager.
+Adds `POST`, `DELETE` and `GET` API endpoint on `/1.0/cluster-manager` resource to configure the connection to LXD Cluster Manager.
 
 ## `shared_custom_block_volumes`
 

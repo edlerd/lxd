@@ -408,7 +408,7 @@ var APIExtensions = []string{
 	"device_usb_serial",
 	"network_allocate_external_ips",
 	"explicit_trust_token",
-	"site_manager",
+	"cluster_manager",
 	"shared_custom_block_volumes",
 	"instance_import_conversion",
 	"instance_create_start",

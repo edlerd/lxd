@@ -1839,8 +1839,8 @@ func (d *Daemon) init() error {
 		// Remove expired tokens (hourly)
 		d.tasks.Add(autoRemoveExpiredTokensTask(d))
 
-		// Send site manager status reports (minutely)
-		d.tasks.Add(sendSiteManagerStatusMessageTask(d))
+		// Send cluster manager status reports (minutely)
+		d.tasks.Add(sendClusterManagerStatusMessageTask(d))
 	}
 
 	// Start all background tasks

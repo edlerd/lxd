@@ -108,7 +108,7 @@ var api10 = []APIEndpoint{
 	projectCmd,
 	projectsCmd,
 	projectStateCmd,
-	siteManagerCmd,
+	clusterManagerCmd,
 	storagePoolCmd,
 	storagePoolResourcesCmd,
 	storagePoolsCmd,

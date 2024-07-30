@@ -455,10 +455,10 @@ type InstanceServer interface {
 	GetPermissions(args GetPermissionsArgs) (permissions []api.Permission, err error)
 	GetPermissionsInfo(args GetPermissionsArgs) (permissions []api.PermissionInfo, err error)
 
-	// Site manager functions
-	PostSiteManager(args api.SiteManagerPost) error
-	GetSiteManager() (configuration *api.SiteManager, err error)
-	DeleteSiteManager() error
+	// Cluster manager functions
+	PostClusterManager(args api.ClusterManagerPost) error
+	GetClusterManager() (configuration *api.ClusterManager, err error)
+	DeleteClusterManager() error
 
 	// Internal functions (for internal use)
 	RawQuery(method string, path string, data any, queryETag string) (resp *api.Response, ETag string, err error)

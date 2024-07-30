@@ -10,30 +10,30 @@ import (
 	"github.com/canonical/lxd/shared/i18n"
 )
 
-type cmdSiteManger struct {
+type cmdClusterManger struct {
 	global *cmdGlobal
 }
 
 // Command is a method of the cmdAlias structure that returns a new cobra Command for managing command aliases.
 // This includes commands for adding, listing, renaming, and removing aliases, along with their usage and descriptions.
-func (c *cmdSiteManger) command() *cobra.Command {
+func (c *cmdClusterManger) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("site-manager")
-	cmd.Short = i18n.G("Manage site-manager connection")
+	cmd.Use = usage("cluster-manager")
+	cmd.Short = i18n.G("Manage cluster-manager connection")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Manage site-manager connections`))
+		`Manage cluster-manager connections`))
 
 	// Join
-	siteManagerJoinCmd := cmdSiteManagerJoin{global: c.global, alias: c}
-	cmd.AddCommand(siteManagerJoinCmd.command())
+	clusterManagerJoinCmd := cmdClusterManagerJoin{global: c.global, alias: c}
+	cmd.AddCommand(clusterManagerJoinCmd.command())
 
 	// Show
-	siteManagerShowCmd := cmdSiteManagerShow{global: c.global, alias: c}
-	cmd.AddCommand(siteManagerShowCmd.command())
+	clusterManagerShowCmd := cmdClusterManagerShow{global: c.global, alias: c}
+	cmd.AddCommand(clusterManagerShowCmd.command())
 
 	// Delete
-	siteManagerDeleteCmd := cmdSiteManagerDelete{global: c.global, alias: c}
-	cmd.AddCommand(siteManagerDeleteCmd.command())
+	clusterManagerDeleteCmd := cmdClusterManagerDelete{global: c.global, alias: c}
+	cmd.AddCommand(clusterManagerDeleteCmd.command())
 
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
@@ -42,21 +42,21 @@ func (c *cmdSiteManger) command() *cobra.Command {
 }
 
 // Join.
-type cmdSiteManagerJoin struct {
+type cmdClusterManagerJoin struct {
 	global *cmdGlobal
-	alias  *cmdSiteManger
+	alias  *cmdClusterManger
 }
 
 // Command is a method of the cmdAliasAdd structure that returns a new cobra Command for adding new command aliases.
 // It specifies the command usage, description, and examples, and links it to the RunE method for execution logic.
-func (c *cmdSiteManagerJoin) command() *cobra.Command {
+func (c *cmdClusterManagerJoin) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = usage("join", i18n.G("[<remote>:]<token>"))
-	cmd.Short = i18n.G("Join a site manager")
+	cmd.Short = i18n.G("Join a cluster manager")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Join a site manager`))
+		`Join a cluster manager`))
 	cmd.Example = cli.FormatSection("", i18n.G(
-		`lxc site-manager join "ababab...abab"`))
+		`lxc cluster-manager join "ababab...abab"`))
 
 	cmd.RunE = c.run
 
@@ -65,7 +65,7 @@ func (c *cmdSiteManagerJoin) command() *cobra.Command {
 
 // Run is a method of the cmdAliasAdd structure. It implements the logic to add a new alias command.
 // The function checks for valid arguments, verifies if the alias already exists, and if not, adds the new alias to the configuration.
-func (c *cmdSiteManagerJoin) run(cmd *cobra.Command, args []string) error {
+func (c *cmdClusterManagerJoin) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
 
 	// Check token argument is present.
@@ -89,34 +89,34 @@ func (c *cmdSiteManagerJoin) run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	payload := api.SiteManagerPost{
+	payload := api.ClusterManagerPost{
 		Token: token,
 	}
 
-	err = d.PostSiteManager(payload)
+	err = d.PostClusterManager(payload)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf(i18n.G("Joined site manager with token") + "\n")
+	fmt.Printf(i18n.G("Joined cluster manager with token") + "\n")
 
 	return nil
 }
 
 // Show.
-type cmdSiteManagerShow struct {
+type cmdClusterManagerShow struct {
 	global *cmdGlobal
-	alias  *cmdSiteManger
+	alias  *cmdClusterManger
 }
 
 // Command is a method of the cmdAliasAdd structure that returns a new cobra Command for adding new command aliases.
 // It specifies the command usage, description, and examples, and links it to the RunE method for execution logic.
-func (c *cmdSiteManagerShow) command() *cobra.Command {
+func (c *cmdClusterManagerShow) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = usage("show")
-	cmd.Short = i18n.G("Show site manager configuration")
+	cmd.Short = i18n.G("Show cluster manager configuration")
 	cmd.Example = cli.FormatSection("", i18n.G(
-		`lxc site-manager show`))
+		`lxc cluster-manager show`))
 
 	cmd.RunE = c.run
 
@@ -125,7 +125,7 @@ func (c *cmdSiteManagerShow) command() *cobra.Command {
 
 // Run is a method of the cmdAliasAdd structure. It implements the logic to add a new alias command.
 // The function checks for valid arguments, verifies if the alias already exists, and if not, adds the new alias to the configuration.
-func (c *cmdSiteManagerShow) run(cmd *cobra.Command, args []string) error {
+func (c *cmdClusterManagerShow) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
 
 	// Get the remote
@@ -139,18 +139,18 @@ func (c *cmdSiteManagerShow) run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := d.GetSiteManager()
+	result, err := d.GetClusterManager()
 	if err != nil {
 		return err
 	}
 
 	if result.ServerCertFingerprint == "" {
-		fmt.Printf(i18n.G("Site manager not configured") + "\n")
+		fmt.Printf(i18n.G("cluster manager not configured") + "\n")
 		return nil
 	}
 
-	fmt.Printf(i18n.G("Site manager configuration:") + "\n" +
-		i18n.G("  addresses") + ": " + strings.Join(result.SiteManagerAddresses, ", ") + "\n" +
+	fmt.Printf(i18n.G("cluster manager configuration:") + "\n" +
+		i18n.G("  addresses") + ": " + strings.Join(result.ClusterManagerAddresses, ", ") + "\n" +
 		i18n.G("  local") + ": " + result.LocalCertFingerprint + "\n" +
 		i18n.G("  server") + ": " + result.ServerCertFingerprint + "\n")
 
@@ -158,19 +158,19 @@ func (c *cmdSiteManagerShow) run(cmd *cobra.Command, args []string) error {
 }
 
 // Delete.
-type cmdSiteManagerDelete struct {
+type cmdClusterManagerDelete struct {
 	global *cmdGlobal
-	alias  *cmdSiteManger
+	alias  *cmdClusterManger
 }
 
 // Command is a method of the cmdAliasAdd structure that returns a new cobra Command for adding new command aliases.
 // It specifies the command usage, description, and examples, and links it to the RunE method for execution logic.
-func (c *cmdSiteManagerDelete) command() *cobra.Command {
+func (c *cmdClusterManagerDelete) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = usage("delete")
-	cmd.Short = i18n.G("Delete site manager configuration")
+	cmd.Short = i18n.G("Delete cluster manager configuration")
 	cmd.Example = cli.FormatSection("", i18n.G(
-		`lxc site-manager delete`))
+		`lxc cluster-manager delete`))
 
 	cmd.RunE = c.run
 
@@ -179,7 +179,7 @@ func (c *cmdSiteManagerDelete) command() *cobra.Command {
 
 // Run is a method of the cmdAliasAdd structure. It implements the logic to add a new alias command.
 // The function checks for valid arguments, verifies if the alias already exists, and if not, adds the new alias to the configuration.
-func (c *cmdSiteManagerDelete) run(cmd *cobra.Command, args []string) error {
+func (c *cmdClusterManagerDelete) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
 
 	// Check token argument is present.
@@ -199,12 +199,12 @@ func (c *cmdSiteManagerDelete) run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	err = d.DeleteSiteManager()
+	err = d.DeleteClusterManager()
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf(i18n.G("Site manager config cleared") + "\n")
+	fmt.Printf(i18n.G("cluster manager config cleared") + "\n")
 
 	return nil
 }

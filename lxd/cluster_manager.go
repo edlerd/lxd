@@ -29,17 +29,17 @@ import (
 	"time"
 )
 
-var siteManagerCmd = APIEndpoint{
-	Path: "site-manager",
+var clusterManagerCmd = APIEndpoint{
+	Path: "cluster-manager",
 
-	Get:    APIEndpointAction{Handler: siteManagerGet, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
-	Post:   APIEndpointAction{Handler: siteManagerPost, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
-	Delete: APIEndpointAction{Handler: siteManagerDelete, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
+	Get:    APIEndpointAction{Handler: clusterManagerGet, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
+	Post:   APIEndpointAction{Handler: clusterManagerPost, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
+	Delete: APIEndpointAction{Handler: clusterManagerDelete, AccessHandler: allowPermission(entity.TypeServer, auth.EntitlementAdmin)},
 }
 
-// swagger:operation GET /1.0/site-manager
+// swagger:operation GET /1.0/cluster-manager
 //
-//	Get site manager configuration
+//	Get cluster manager configuration
 //
 //	---
 //	consumes:
@@ -55,34 +55,34 @@ var siteManagerCmd = APIEndpoint{
 //	    $ref: "#/responses/Forbidden"
 //	  "500":
 //	    $ref: "#/responses/InternalServerError"
-func siteManagerGet(d *Daemon, r *http.Request) response.Response {
+func clusterManagerGet(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	addresses, serverCert := s.GlobalConfig.SiteManagerServer()
+	addresses, serverCert := s.GlobalConfig.ClusterManagerServer()
 
 	if serverCert == "" {
-		return response.SyncResponse(true, api.SiteManager{})
+		return response.SyncResponse(true, api.ClusterManager{})
 	}
 
-	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "site-manager", shared.CertServer, false)
+	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "cluster-manager", shared.CertServer, false)
 	if err != nil {
 		return response.InternalError(err)
 	}
 
-	resp := api.SiteManager{
-		SiteManagerAddresses:  addresses,
-		LocalCertFingerprint:  certInfo.Fingerprint(),
-		ServerCertFingerprint: serverCert,
+	resp := api.ClusterManager{
+		ClusterManagerAddresses: addresses,
+		LocalCertFingerprint:    certInfo.Fingerprint(),
+		ServerCertFingerprint:   serverCert,
 	}
 
 	return response.SyncResponse(true, resp)
 }
 
-// swagger:operation POST /1.0/site-manager token
+// swagger:operation POST /1.0/cluster-manager token
 //
-//	Configure site manager
+//	Configure cluster manager
 //
-//	Join a remote site manager with a token.
+//	Join a remote cluster manager with a token.
 //
 //	---
 //	consumes:
@@ -94,7 +94,7 @@ func siteManagerGet(d *Daemon, r *http.Request) response.Response {
 //	    token: string
 //	    required: true
 //	    schema:
-//	      $ref: "#/definitions/SiteManagerPost"
+//	      $ref: "#/definitions/ClusterManagerPost"
 //	responses:
 //	  "200":
 //	    $ref: "#/responses/EmptySyncResponse"
@@ -104,10 +104,10 @@ func siteManagerGet(d *Daemon, r *http.Request) response.Response {
 //	    $ref: "#/responses/Forbidden"
 //	  "500":
 //	    $ref: "#/responses/InternalServerError"
-func siteManagerPost(d *Daemon, r *http.Request) response.Response {
+func clusterManagerPost(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	args := api.SiteManagerPost{}
+	args := api.ClusterManagerPost{}
 	err := json.NewDecoder(r.Body).Decode(&args)
 	if err != nil {
 		return response.BadRequest(err)
@@ -122,11 +122,11 @@ func siteManagerPost(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(err)
 	}
 
-	siteManagerAddresses := strings.Join(joinToken.Addresses, ",")
-	siteManagerFingerprint := joinToken.Fingerprint
-	updateConfig(d, r, siteManagerAddresses, siteManagerFingerprint)
+	clusterManagerAddresses := strings.Join(joinToken.Addresses, ",")
+	clusterManagerFingerprint := joinToken.Fingerprint
+	updateConfig(d, r, clusterManagerAddresses, clusterManagerFingerprint)
 
-	err = doPostJoinSiteManager(s, joinToken)
+	err = doPostJoinClusterManager(s, joinToken)
 	if err != nil {
 		return response.InternalError(err)
 	}
@@ -134,12 +134,12 @@ func siteManagerPost(d *Daemon, r *http.Request) response.Response {
 	return response.SyncResponse(true, nil)
 }
 
-func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken) error {
-	client, publicKey := NewSiteManagerClient(s, joinToken.Fingerprint)
+func doPostJoinClusterManager(s *state.State, joinToken *api.ClusterMemberJoinToken) error {
+	client, publicKey := NewClusterManagerClient(s, joinToken.Fingerprint)
 
-	payload := SiteManagerPostSite{
-		SiteName:        joinToken.ServerName,
-		SiteCertificate: publicKey,
+	payload := ClusterManagerPostCluster{
+		ClusterName:        joinToken.ServerName,
+		ClusterCertificate: publicKey,
 	}
 
 	reqBody, err := json.Marshal(payload)
@@ -147,7 +147,7 @@ func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken
 		return err
 	}
 
-	url := "https://" + joinToken.Addresses[0] + "/1.0/sites" // todo we should retry with the other addresses if this one fails
+	url := "https://" + joinToken.Addresses[0] + "/1.0/remote-clusters" // todo we should retry with the other addresses if this one fails
 	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken
 
 	mac := hmac.New(sha256.New, []byte(joinToken.Secret))
 	mac.Write(reqBody)
-	req.Header.Set("X-SITE-SIGNATURE", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
+	req.Header.Set("X-CLUSTER-SIGNATURE", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -163,7 +163,7 @@ func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to register in site manager: %s", resp.Status)
+		return fmt.Errorf("failed to register in cluster manager: %s", resp.Status)
 	}
 
 	return nil
@@ -172,24 +172,24 @@ func doPostJoinSiteManager(s *state.State, joinToken *api.ClusterMemberJoinToken
 func updateConfig(d *Daemon, r *http.Request, addresses string, cert string) {
 	putConfig := api.ServerPut{
 		Config: map[string]any{
-			"site-manager.addresses": addresses,
-			"site-manager.cert":      cert,
+			"cluster-manager.addresses": addresses,
+			"cluster-manager.cert":      cert,
 		},
 	}
 
 	doAPI10Update(d, r, putConfig, true)
 }
 
-type SiteManagerPostSite struct {
-	SiteName        string `json:"site_name" yaml:"site_name"`
-	SiteCertificate string `json:"site_certificate" yaml:"site_certificate"`
+type ClusterManagerPostCluster struct {
+	ClusterName        string `json:"cluster_name" yaml:"cluster_name"`
+	ClusterCertificate string `json:"cluster_certificate" yaml:"cluster_certificate"`
 }
 
-// NewSiteManagerClient returns a site manager client.
-func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Client, string) {
+// NewClusterManagerClient returns a cluster manager client.
+func NewClusterManagerClient(s *state.State, serverFingerPrint string) (*http.Client, string) {
 	client := &http.Client{}
 
-	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "site-manager", shared.CertServer, false)
+	certInfo, err := shared.KeyPairAndCA(s.OS.VarDir, "cluster-manager", shared.CertServer, false)
 	if err != nil {
 		return nil, ""
 	}
@@ -238,11 +238,11 @@ func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Clien
 	return client, publicKey
 }
 
-// swagger:operation DELETE /1.0/site-manager
+// swagger:operation DELETE /1.0/cluster-manager
 //
-//	Delete site manager configuration
+//	Delete cluster manager configuration
 //
-//	Remove this cluster from site manager
+//	Remove this cluster from cluster manager
 //
 //	---
 //	produces:
@@ -256,12 +256,12 @@ func NewSiteManagerClient(s *state.State, serverFingerPrint string) (*http.Clien
 //	    $ref: "#/responses/Forbidden"
 //	  "500":
 //	    $ref: "#/responses/InternalServerError"
-func siteManagerDelete(d *Daemon, r *http.Request) response.Response {
+func clusterManagerDelete(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
 	updateConfig(d, r, "", "")
-	certFilename := filepath.Join(s.OS.VarDir, "site-manager.crt")
-	keyFilename := filepath.Join(s.OS.VarDir, "site-manager.key")
+	certFilename := filepath.Join(s.OS.VarDir, "cluster-manager.crt")
+	keyFilename := filepath.Join(s.OS.VarDir, "cluster-manager.key")
 	if shared.PathExists(certFilename) {
 		err := os.Remove(certFilename)
 		if err != nil {
@@ -282,7 +282,7 @@ type StatusDistribution struct {
 	Count  int64  `json:"count"`
 }
 
-type SiteManagerStatusPost struct {
+type ClusterManagerStatusPost struct {
 	CPUTotalCount     int64                `json:"cpu_total_count"`
 	CPULoad1          string               `json:"cpu_load_1"`
 	CPULoad5          string               `json:"cpu_load_5"`
@@ -295,25 +295,25 @@ type SiteManagerStatusPost struct {
 	InstanceStatuses  []StatusDistribution `json:"instance_status"`
 }
 
-func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
-	logger.Debug("Running sendSiteManagerStatusMessage")
+func sendClusterManagerStatusMessage(ctx context.Context, s *state.State) {
+	logger.Debug("Running sendClusterManagerStatusMessage")
 
-	// Get the site manager addresses
-	addresses, serverCert := s.GlobalConfig.SiteManagerServer()
+	// Get the cluster manager addresses
+	addresses, serverCert := s.GlobalConfig.ClusterManagerServer()
 
 	if len(addresses) == 0 {
-		logger.Debug("No site manager address configured")
+		logger.Debug("No cluster manager address configured")
 		return
 	}
 
 	if serverCert == "" {
-		logger.Debug("No site manager certificate configured")
+		logger.Debug("No cluster manager certificate configured")
 		return
 	}
 
-	client, _ := NewSiteManagerClient(s, serverCert)
+	client, _ := NewClusterManagerClient(s, serverCert)
 
-	payload := SiteManagerStatusPost{}
+	payload := ClusterManagerStatusPost{}
 
 	err := enrichClusterMemberMetrics(ctx, s, &payload)
 	if err != nil {
@@ -333,9 +333,9 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 		return
 	}
 
-	logger.Debug("Sending status message to site manager", logger.Ctx{"reqBody": string(reqBody)})
+	logger.Debug("Sending status message to cluster manager", logger.Ctx{"reqBody": string(reqBody)})
 
-	url := "https://" + addresses[0] + "/1.0/sites/status" // todo we should retry with the other addresses if this one fails
+	url := "https://" + addresses[0] + "/1.0/remote-clusters/status" // todo we should retry with the other addresses if this one fails
 	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
 		logger.Error("Failed to create request", logger.Ctx{"err": err})
@@ -344,25 +344,25 @@ func sendSiteManagerStatusMessage(ctx context.Context, s *state.State) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("Failed to send status message to site manager", logger.Ctx{"err": err})
+		logger.Error("Failed to send status message to cluster manager", logger.Ctx{"err": err})
 		return
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("Invalid status code received from site manager", logger.Ctx{"status": resp.Status})
+		logger.Error("Invalid status code received from cluster manager", logger.Ctx{"status": resp.Status})
 		return
 	}
 
-	logger.Debug("Done sending status message to site manager")
+	logger.Debug("Done sending status message to cluster manager")
 }
 
-func enrichInstanceMetrics(ctx context.Context, s *state.State, result *SiteManagerStatusPost) error {
+func enrichInstanceMetrics(ctx context.Context, s *state.State, result *ClusterManagerStatusPost) error {
 	instanceFrequencies := make(map[string]int64)
 	err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
 		return tx.InstanceList(ctx, func(dbInst db.InstanceArgs, p api.Project) error {
 			inst, err := instance.Load(s, dbInst, p)
 			if err != nil {
-				return fmt.Errorf("failed loading instances for site manager status update task: %w", err)
+				return fmt.Errorf("failed loading instances for cluster manager status update task: %w", err)
 			}
 			instanceFrequencies[inst.State()]++
 			return nil
@@ -382,7 +382,7 @@ func enrichInstanceMetrics(ctx context.Context, s *state.State, result *SiteMana
 	return err
 }
 
-func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *SiteManagerStatusPost) error {
+func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *ClusterManagerStatusPost) error {
 	var members []db.NodeInfo
 	var err error
 
@@ -471,9 +471,9 @@ func enrichClusterMemberMetrics(ctx context.Context, s *state.State, result *Sit
 	return nil
 }
 
-func sendSiteManagerStatusMessageTask(d *Daemon) (task.Func, task.Schedule) {
+func sendClusterManagerStatusMessageTask(d *Daemon) (task.Func, task.Schedule) {
 	f := func(ctx context.Context) {
-		sendSiteManagerStatusMessage(ctx, d.State())
+		sendClusterManagerStatusMessage(ctx, d.State())
 	}
 
 	return f, task.Every(time.Minute)

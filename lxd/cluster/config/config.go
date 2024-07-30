@@ -247,10 +247,10 @@ func (c *Config) ClusterHealingThreshold() time.Duration {
 	return healingThreshold
 }
 
-// SiteManagerServer returns all the settings needed to connect to site manager.
-func (c *Config) SiteManagerServer() (addresses []string, cert string) {
-	addresses = strings.Split(c.m.GetString("site-manager.addresses"), ",")
-	cert = c.m.GetString("site-manager.cert")
+// ClusterManagerServer returns all the settings needed to connect to cluster manager.
+func (c *Config) ClusterManagerServer() (addresses []string, cert string) {
+	addresses = strings.Split(c.m.GetString("cluster-manager.addresses"), ",")
+	cert = c.m.GetString("cluster-manager.cert")
 
 	return addresses, cert
 }
@@ -743,23 +743,23 @@ var ConfigSchema = config.Schema{
 	//  shortdesc: OVN SSL client key
 	"network.ovn.client_key": {Default: ""},
 
-	// lxdmeta:generate(entities=server; group=miscellaneous; key=site-manager.addresses)
+	// lxdmeta:generate(entities=server; group=miscellaneous; key=cluster-manager.addresses)
 	//
 	// ---
 	//  type: string
 	//  scope: global
-	//  defaultdesc: Site manager addresses
-	//  shortdesc: Site manager addresses
-	"site-manager.addresses": {Default: ""},
+	//  defaultdesc: Cluster manager addresses
+	//  shortdesc: Cluster manager addresses
+	"cluster-manager.addresses": {Default: ""},
 
-	// lxdmeta:generate(entities=server; group=miscellaneous; key=site-manager.cert)
+	// lxdmeta:generate(entities=server; group=miscellaneous; key=cluster-manager.cert)
 	//
 	// ---
 	//  type: string
 	//  scope: global
-	//  defaultdesc: Site manager certificate fingerprint
-	//  shortdesc: Site manager cert
-	"site-manager.cert": {Default: ""},
+	//  defaultdesc: Cluster manager certificate fingerprint
+	//  shortdesc: Cluster manager cert
+	"cluster-manager.cert": {Default: ""},
 }
 
 func expiryValidator(value string) error {
