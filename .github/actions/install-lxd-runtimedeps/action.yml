@@ -45,5 +45,3 @@ runs:
           xz-utils \
           zfsutils-linux
 
-        # reclaim some space
-        sudo apt-get clean
