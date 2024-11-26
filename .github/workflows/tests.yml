@@ -12,7 +12,7 @@ on:
 env:
   LXD_REQUIRED_TESTS: "storage_buckets"
   LXD_SKIP_TESTS: "clustering_upgrade clustering_upgrade_large"
-  GOCOVERDIR: ${{ ( github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ) && '/home/runner/work/lxd/lxd/coverage' || '' }}
+  GOCOVERDIR: '/home/runner/work/lxd/lxd/coverage'
 
 permissions:
   contents: read
@@ -449,7 +449,7 @@ jobs:
     name: UI e2e tests
     runs-on: ubuntu-latest
     needs: [code-tests, documentation]
-    if: ${{ ( github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push' ) && github.ref_name == 'main' && github.repository == 'canonical/lxd' }}
+    if: ${{ ( github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push' ) && github.ref_name == 'main' && github.repository == 'edlerd/lxd' }}
     env:
       LD_LIBRARY_PATH: "/home/runner/go/bin/dqlite/libs/"
       LXD_DIR: "/var/lib/lxd"
