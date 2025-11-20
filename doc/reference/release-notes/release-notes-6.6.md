@@ -11,7 +11,7 @@ This is a {ref}`feature release <ref-releases-feature>` and is not recommended f
 
 ```{admonition} Release notes content
 :class: note
-These release notes cover updates in the [core LXD repository](https://github.com/canonical/lxd) and the [LXD snap package](https://snapcraft.io/lxd). For related updates outside of these repositories, such as in the [LXD UI](https://github.com/canonical/lxd-ui), please see the release announcement in [our Discourse forum](https://discourse.ubuntu.com/tags/c/lxd/126/release).
+These release notes cover updates in the [core LXD repository](https://github.com/canonical/lxd), [LXD UI repository](https://github.com/canonical/lxd-ui), and the [LXD snap package](https://snapcraft.io/lxd). For related updates outside of these repositories, and screenshots, please see the release announcement in [our Discourse forum](https://discourse.ubuntu.com/t/lxd-6-6-has-been-released/72476).
 ```
 
 (ref-release-notes-6.6-highlights)=
@@ -158,6 +158,48 @@ A new field `requestor` was added to operations, which contains information abou
 A new field `used_by` was added to disks in the resources API to indicate its potential use by any virtual parent device, such as `bcache`.
 
 - API extension: {ref}`extension-resources-disk-used-by`
+
+## UI updates
+
+This release includes several improvements and new features in the LXD UI.
+
+### SSH key generation during instance creation in the UI
+
+The UI now supports generating SSH key pairs during **instance creation**, making it easier to configure instance access without relying on external tools.
+
+### Bulk operations: “View details” in the UI
+
+Bulk actions now include an expanded **View details** interface, allowing you to inspect aggregated information and per-item results when managing multiple resources at once.
+For example, when performing **bulk instance deletion** or **bulk instance start**, the UI now shows which instances succeeded, which failed, and any associated messages for each item.
+
+### Mobile experience improvements in the UI
+
+A series of mobile-focused UI refinements improves navigation, responsiveness, and readability across smaller screens.
+
+### Active project selection in settings in the UI
+
+A new **Active project** setting is available in the **Settings** panel.
+The selected project is stored in `localStorage`, ensuring the UI restores your working context on return.
+
+### HPE storage driver support in the UI
+
+The UI now includes configuration and management support for the **HPE Alletra storage driver**, enabling pool and volume interaction for environments using this backend.
+
+### Saved terminal connection defaults in the UI
+
+Users can now save terminal connection defaults as an **instance user key**, allowing persistent preferences for how the terminal connects to instances.
+
+### ACL support on instances and profiles in the UI
+
+ACLs can now be added directly on **instances** and **profiles**, not just at the network level, enabling more granular access control configuration directly in the UI.
+
+### MTU and VLAN support for physical networks in the UI
+
+Physical network configuration forms now include **MTU** and **VLAN** fields, enabling more complete network definition from within the UI.
+
+### Project configuration: restricted backups in the UI
+
+Project configuration now exposes the `restricted.backups` option, allowing backup-related restrictions to be managed directly through the UI.
 
 (ref-release-notes-6.6-bugfixes)=
 ## Bug fixes
